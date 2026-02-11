@@ -1,3 +1,6 @@
+<p align="center">
+  <img src="./icon.png" width="200" alt="Sui Image Uploader Icon">
+</p>
 ## 🌟 Main Features
 
 ### 🔐 Security & Privacy
