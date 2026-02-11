@@ -66,7 +66,7 @@ If you wish to deploy your own smart contract:
 
 ## ⚖️ Disclaimer / 免責聲明
 
-> > **Disclaimer of Liability:**
+>  **Disclaimer of Liability:**
 > 1. This project is provided strictly for technical research and demonstration purposes. The developer assumes no legal responsibility for any content uploaded by users.
 > 2. Users are solely responsible for the data they upload (including images, text, or encrypted files). Uploading illegal, copyrighted, pornographic, violent, or harmful content is strictly prohibited.
 > 3. Due to the immutable nature of blockchain technology, data uploaded to the Sui network may exist permanently. The developer has no control over, nor the ability to delete, data once it is finalized on the blockchain.
