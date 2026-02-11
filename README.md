@@ -49,8 +49,7 @@ Compared to decentralized storage protocols like **Walrus**, this fully on-chain
 
 ### 1. Run the Frontend
 
-* Open `index.html` using **VS Code**.
-* Start the **Live Server** extension to host the file locally (this ensures wallet providers like OKX or Slush can detect the site via `http://localhost`).
+* Click `start-localhost.bat` to start server.
 * Connect your **Slush** or **OKX Wallet** (Ensure you are on **Sui Mainnet**).
 
 ### 2. Custom Deployment (Optional)
