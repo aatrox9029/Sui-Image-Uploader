@@ -49,7 +49,7 @@ Compared to decentralized storage protocols like **Walrus**, this fully on-chain
 
 ### 1. Run the Frontend
 
-* Click `start-localhost.bat` to start server.
+* Use `start-localhost.bat` to start server.
 * Connect your **Slush** or **OKX Wallet** (Ensure you are on **Sui Mainnet**).
 
 ### 2. Custom Deployment (Optional)
