@@ -62,3 +62,18 @@ If you wish to deploy your own smart contract:
 3. Copy your new **Package ID**.
 4. Replace the `PACKAGE_ID` constant in `index.html` with your deployed ID.
 <img width="603" height="1208" alt="image" src="https://github.com/user-attachments/assets/27dd6f5f-8c91-4337-9464-0e968acd5618" />
+---
+
+## ⚖️ Disclaimer / 免責聲明
+
+> > **Disclaimer of Liability:**
+> 1. This project is provided strictly for technical research and demonstration purposes. The developer assumes no legal responsibility for any content uploaded by users.
+> 2. Users are solely responsible for the data they upload (including images, text, or encrypted files). Uploading illegal, copyrighted, pornographic, violent, or harmful content is strictly prohibited.
+> 3. Due to the immutable nature of blockchain technology, data uploaded to the Sui network may exist permanently. The developer has no control over, nor the ability to delete, data once it is finalized on the blockchain.
+> 4. By using this tool, you acknowledge and agree that the developer is not liable for any legal disputes or regulatory violations arising from your use of the service. The tool is provided "as is" without any warranties.
+
+> **重要聲明：**
+> 1. 本專案僅作為技術研究與區塊鏈工具展示之用，開發者不對使用者上傳的任何內容承擔法律責任。
+> 2. 使用者須對其上傳之所有數據（包括但不限於圖片、文字、加密檔案）負全部法律責任。嚴禁上傳任何違反法律、侵犯版權、色情、暴力或有害之內容。
+> 3. 由於區塊鏈「不可篡改」之特性，上傳後的數據可能永久存在。開發者無法控制或刪除已存儲於 Sui 區塊鏈上的數據。
+> 4. 使用本工具即表示您同意：任何法律糾紛或違規行為均與開發者無關，開發者不提供任何形式的擔保或補償。
