@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
@@ -30,11 +30,44 @@
     .preview img { width: 100%; height: 100%; object-fit: cover; }
     #compress-preview { width: min(100%, 500px); height: min(500px, 70vh); margin: 8px auto 0; }
     #compress-preview img { object-fit: contain; cursor: zoom-in; }
+    #compress-preview.compress-loading { position: relative; background: linear-gradient(135deg, #030712, #0b1222); overflow: hidden; }
+    #compress-preview.compress-loading::before {
+      content: "";
+      position: absolute;
+      inset: -40% -80%;
+      background: linear-gradient(90deg, transparent, rgba(14, 165, 233, 0.22), transparent);
+      animation: compressShimmer 1.8s linear infinite;
+    }
+    .compress-loading-wrap { position: relative; z-index: 1; display: grid; justify-items: center; gap: 10px; }
+    .compress-loading-ring {
+      width: 56px;
+      height: 56px;
+      border-radius: 999px;
+      border: 3px solid rgba(148, 163, 184, 0.25);
+      border-top-color: #22d3ee;
+      border-right-color: #38bdf8;
+      animation: compressSpin 0.95s linear infinite;
+      box-shadow: 0 0 24px rgba(14, 165, 233, 0.25);
+    }
+    .compress-loading-text { font-size: 13px; color: #cbd5e1; letter-spacing: 0.2px; }
+    .compress-loading-dots { display: flex; gap: 6px; }
+    .compress-loading-dots span {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: #38bdf8;
+      opacity: 0.45;
+      animation: compressPulse 1.05s ease-in-out infinite;
+    }
+    .compress-loading-dots span:nth-child(2) { animation-delay: 0.12s; }
+    .compress-loading-dots span:nth-child(3) { animation-delay: 0.24s; }
+    @keyframes compressSpin { to { transform: rotate(360deg); } }
+    @keyframes compressPulse { 0%, 100% { transform: translateY(0); opacity: 0.35; } 50% { transform: translateY(-4px); opacity: 1; } }
+    @keyframes compressShimmer { from { transform: translateX(-25%); } to { transform: translateX(25%); } }
     .lightbox { position: fixed; inset: 0; z-index: 9999; background: rgba(2, 6, 23, 0.92); display: flex; align-items: center; justify-content: center; padding: 16px; }
     .lightbox-scroll { max-width: 100%; max-height: 100%; overflow: auto; border: 1px solid #334155; border-radius: 10px; background: #020617; padding: 8px; }
     .lightbox-scroll img { width: auto; height: auto; max-width: none; max-height: none; display: block; cursor: zoom-out; }
-    .lightbox-hint { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); background: rgba(15, 23, 42, 0.85); border: 1px solid #334155; border-radius: 999px; padding: 8px 14px; font-size: 12px; color: #cbd5e1; pointer-events: none; }
-    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
+    .lightbox-hint { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); background: rgba(15, 23, 42, 0.85); border: 1px solid #334155; border-radius: 999px; padding: 8px 14px; font-size: 12px; color: #cbd5e1; pointer-events: none; }`r`n    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
     .hidden { display: none; }
   </style>
 </head>
@@ -176,6 +209,7 @@
       manualCompression: null,
       compressionPreviewUrl: null,
       compressionControl: "factor",
+      isCompressing: false,
       currentUploadGasMist: 0n,
       logRows: [],
     };
@@ -224,6 +258,7 @@
         compress_preview_idle: "尚未壓縮",
         compress_preview_original: "目前使用原圖（未壓縮）",
         compress_preview_applied: "已套用壓縮預覽",
+        compress_preview_loading: "圖片壓縮中...",
         compress_result_none: "",
         compress_result_info: "壓縮結果: {width} x {height} | {size}",
         lightbox_back_hint: "按任一處返回頁面",
@@ -323,6 +358,7 @@
         compress_preview_idle: "尚未压缩",
         compress_preview_original: "当前使用原图（未压缩）",
         compress_preview_applied: "已应用压缩预览",
+        compress_preview_loading: "图片压缩中...",
         compress_result_none: "",
         compress_result_info: "压缩结果: {width} x {height} | {size}",
         lightbox_back_hint: "按任一处返回页面",
@@ -422,6 +458,7 @@
         compress_preview_idle: "No compression applied",
         compress_preview_original: "Using original image (no compression)",
         compress_preview_applied: "Compressed preview applied",
+        compress_preview_loading: "Compressing image...",
         compress_result_none: "",
         compress_result_info: "Compressed: {width} x {height} | {size}",
         lightbox_back_hint: "Tap anywhere to return",
@@ -521,6 +558,7 @@
         compress_preview_idle: "圧縮はまだ適用されていません",
         compress_preview_original: "現在は原図を使用（圧縮なし）",
         compress_preview_applied: "圧縮プレビューを適用済み",
+        compress_preview_loading: "画像を圧縮しています...",
         compress_result_none: "",
         compress_result_info: "圧縮結果: {width} x {height} | {size}",
         lightbox_back_hint: "任意の場所を押すと戻ります",
@@ -620,6 +658,7 @@
         compress_preview_idle: "아직 압축이 적용되지 않았습니다",
         compress_preview_original: "현재 원본 이미지 사용(압축 없음)",
         compress_preview_applied: "압축 미리보기가 적용되었습니다",
+        compress_preview_loading: "이미지 압축 중...",
         compress_result_none: "",
         compress_result_info: "압축 결과: {width} x {height} | {size}",
         lightbox_back_hint: "아무 곳이나 누르면 돌아갑니다",
@@ -695,6 +734,7 @@
         "失敗": "失败", "成功": "成功", "載入": "加载", "圖片": "图片", "密碼": "密码", "錢包": "钱包",
         "鏈別": "链别", "地址": "地址", "刪除": "删除", "下載": "下载", "查詢": "查询",
         "尚未開始": "尚未开始", "尚未選擇圖片": "尚未选择图片", "尚未計算": "尚未计算",
+        "手動壓縮": "手动压缩", "原圖未壓縮": "原图未压缩",
         "壓縮失敗": "压缩失败", "目前網路": "当前网络", "查不到 Package ID": "找不到 Package ID",
         "SUI 餘額不足，至少需要": "SUI 余额不足，至少需要", "錢包沒有回傳帳號": "钱包没有返回账号",
         "此錢包不支援 Sui 簽名 API": "此钱包不支持 Sui 签名 API", "單筆直傳上傳": "单笔直传上传",
@@ -715,6 +755,7 @@
         "刪除圖片": "Delete image", "刪除圖片中": "Deleting image", "已下載圖片": "Image downloaded", "已複製 ID": "Copied ID",
         "圖片": "image", "密碼": "password", "錢包": "wallet", "鏈別": "Chain", "地址": "Address",
         "尚未開始": "Not started", "尚未選擇圖片": "No image selected", "尚未計算": "Not calculated yet",
+        "手動壓縮": "Manual compression", "原圖未壓縮": "Original (no compression)",
         "壓縮失敗": "Compression failed", "目前網路": "Current network", "查不到 Package ID": "Package ID not found",
         "SUI 餘額不足，至少需要": "Insufficient SUI balance, at least required:", "錢包沒有回傳帳號": "Wallet did not return an account",
         "此錢包不支援 Sui 簽名 API": "This wallet does not support Sui signing API", "單筆直傳上傳": "Single direct upload",
@@ -734,6 +775,7 @@
         "查詢失敗": "検索失敗", "載入失敗": "読み込み失敗", "下載失敗": "ダウンロード失敗", "刪除失敗": "削除失敗",
         "刪除圖片": "画像削除", "刪除圖片中": "画像削除中", "已下載圖片": "画像をダウンロードしました", "已複製 ID": "ID をコピーしました",
         "圖片": "画像", "密碼": "パスワード", "錢包": "ウォレット", "鏈別": "チェーン", "地址": "アドレス",
+        "手動壓縮": "手動圧縮", "原圖未壓縮": "原図（圧縮なし）",
         "壓縮失敗": "圧縮失敗", "目前網路": "現在のネットワーク", "查不到 Package ID": "Package ID が見つかりません",
         "SUI 餘額不足，至少需要": "SUI 残高不足、最低必要:", "錢包沒有回傳帳號": "ウォレットからアカウントが返されませんでした",
         "此錢包不支援 Sui 簽名 API": "このウォレットは Sui 署名 API をサポートしていません", "單筆直傳上傳": "単発直接アップロード",
@@ -753,6 +795,7 @@
         "查詢失敗": "조회 실패", "載入失敗": "불러오기 실패", "下載失敗": "다운로드 실패", "刪除失敗": "삭제 실패",
         "刪除圖片": "이미지 삭제", "刪除圖片中": "이미지 삭제 중", "已下載圖片": "이미지 다운로드 완료", "已複製 ID": "ID 복사 완료",
         "圖片": "이미지", "密碼": "비밀번호", "錢包": "지갑", "鏈別": "체인", "地址": "주소",
+        "手動壓縮": "수동 압축", "原圖未壓縮": "원본(압축 없음)",
         "壓縮失敗": "압축 실패", "目前網路": "현재 네트워크", "查不到 Package ID": "Package ID를 찾을 수 없습니다",
         "SUI 餘額不足，至少需要": "SUI 잔액 부족, 최소 필요:", "錢包沒有回傳帳號": "지갑이 계정을 반환하지 않았습니다",
         "此錢包不支援 Sui 簽名 API": "이 지갑은 Sui 서명 API를 지원하지 않습니다", "單筆直傳上傳": "단일 직접 업로드",
@@ -777,6 +820,13 @@
       const map = PHRASE_MAP[state.lang] || {};
       for (const [from, to] of Object.entries(map).sort((a, b) => b[0].length - a[0].length)) out = out.replaceAll(from, to);
       return out;
+    }
+    function formatCompressionModeLabel(modeKey, modeParams = {}) {
+      const base = t(modeKey || "comp_using_original");
+      const suffix = [];
+      if (modeParams.factor !== undefined && modeParams.factor !== null) suffix.push(`x${Number(modeParams.factor).toFixed(2)}`);
+      if (modeParams.quality !== undefined && modeParams.quality !== null) suffix.push(`q${modeParams.quality}`);
+      return suffix.length ? `${base} ${suffix.join(" ")}` : base;
     }
     function applyLanguage() {
       if (!I18N[state.lang]) state.lang = "zh-Hant";
@@ -810,14 +860,21 @@
       $("password-input").placeholder = t("ph_password");
       $("lookup-id").placeholder = t("ph_lookup_id");
       $("lookup-password").placeholder = t("ph_lookup_password");
+      const currentProgressText = String($("upload-progress").textContent || "").trim();
+      const progressWasIdle = Object.values(I18N).some((dict) => String(dict?.progress_idle || "").trim() === currentProgressText);
       const noSelectedFile = !$("file-input").files?.[0];
       const isUploadingNow = $("btn-upload").disabled;
       if (noSelectedFile && !isUploadingNow) {
         setGas(t("gas_idle"));
         setComp(t("comp_idle"));
         setProg(t("progress_idle"));
+      } else if (progressWasIdle && !isUploadingNow) {
+        setProg(t("progress_idle"));
       }
-      if (!state.manualCompression) {
+      if (state.isCompressing) {
+        const loadingText = $("compress-preview").querySelector('[data-role="compress-loading-text"]');
+        if (loadingText) loadingText.textContent = t("compress_preview_loading");
+      } else if (!state.manualCompression) {
         $("compress-preview").textContent = $("file-input").files?.[0] ? t("compress_preview_original") : t("compress_preview_idle");
         if (!$("file-input").files?.[0]) setCompressionResultMeta(t("compress_result_none"));
       } else {
@@ -833,7 +890,21 @@
     function renderLog() {
       const e = $("log");
       const lines = state.logRows.map((row) => {
-        const msg = row.key ? t(row.key, row.vars || {}) : tl(row.raw || "");
+        if (row.key) {
+          let vars = row.vars || {};
+          if (vars.modeKey) {
+            vars = {
+              ...vars,
+              mode: formatCompressionModeLabel(vars.modeKey, {
+                factor: vars.modeFactor,
+                quality: vars.modeQuality,
+              }),
+            };
+          }
+          const msg = tl(t(row.key, vars));
+          return `[${row.time}] ${msg}`;
+        }
+        const msg = tl(row.raw || "");
         return `[${row.time}] ${msg}`;
       });
       e.textContent = lines.join("\n");
@@ -945,8 +1016,21 @@
       if (state.compressionControl === "target") syncFactorFromTarget();
       else syncTargetFromFactor();
     }
+    function showCompressionPreviewLoading() {
+      closeLightbox();
+      const el = $("compress-preview");
+      el.classList.add("compress-loading");
+      el.innerHTML = `
+        <div class="compress-loading-wrap">
+          <div class="compress-loading-ring"></div>
+          <div class="compress-loading-text" data-role="compress-loading-text">${t("compress_preview_loading")}</div>
+          <div class="compress-loading-dots"><span></span><span></span><span></span></div>
+        </div>
+      `;
+    }
     function setCompressedPreview(bytes, mimeType, hintText = "") {
       const el = $("compress-preview");
+      el.classList.remove("compress-loading");
       if (state.compressionPreviewUrl) {
         URL.revokeObjectURL(state.compressionPreviewUrl);
         state.compressionPreviewUrl = null;
@@ -976,6 +1060,7 @@
       else closeLightbox();
     }
     function clearManualCompression() {
+      state.isCompressing = false;
       state.manualCompression = null;
       closeLightbox();
       if (state.compressionPreviewUrl) {
@@ -983,6 +1068,7 @@
         state.compressionPreviewUrl = null;
       }
       $("btn-cancel-compress").classList.add("hidden");
+      $("compress-preview").classList.remove("compress-loading");
       $("compress-preview").textContent = $("file-input").files?.[0] ? t("compress_preview_original") : t("compress_preview_idle");
       setCompressionResultMeta(t("compress_result_none"));
     }
@@ -1143,7 +1229,7 @@
           originalBytes: rawBytes.length,
           bytes: manual.bytes,
           mimeType: manual.mimeType,
-          compressionMode: manual.mode,
+          compressionMode: formatCompressionModeLabel(manual.modeKey, manual.modeParams || {}),
         };
       }
 
@@ -1151,7 +1237,7 @@
         originalBytes: rawBytes.length,
         bytes: rawBytes,
         mimeType: rawMime,
-        compressionMode: t("comp_using_original"),
+        compressionMode: formatCompressionModeLabel("comp_using_original"),
       };
     }
 
@@ -1165,7 +1251,8 @@
       return {
         bytes: candidate.bytes,
         mimeType: candidate.mimeType,
-        mode: `${t("comp_using_compressed")} x${factor.toFixed(2)}`,
+        modeKey: "comp_using_compressed",
+        modeParams: { factor },
         isOriginal: false,
         width: candidate.width,
         height: candidate.height,
@@ -1188,7 +1275,8 @@
         return {
           bytes: rawBytes,
           mimeType: rawMime,
-          mode: t("comp_using_original"),
+          modeKey: "comp_using_original",
+          modeParams: {},
           isOriginal: true,
           width: img.naturalWidth,
           height: img.naturalHeight,
@@ -1214,7 +1302,8 @@
             return {
               bytes: candidate.bytes,
               mimeType: candidate.mimeType,
-              mode: `${t("comp_using_compressed")} x${factor.toFixed(2)} q${q}`,
+              modeKey: "comp_using_compressed",
+              modeParams: { factor, quality: q },
               isOriginal: false,
               width: candidate.width,
               height: candidate.height,
@@ -1227,7 +1316,8 @@
       return {
         bytes: best.bytes,
         mimeType: best.mimeType,
-        mode: `${t("comp_using_compressed")} x${best.factor.toFixed(2)} q${best.quality}`,
+        modeKey: "comp_using_compressed",
+        modeParams: { factor: best.factor, quality: best.quality },
         isOriginal: false,
         width: best.width,
         height: best.height,
@@ -1386,6 +1476,8 @@
       if (!file) { logKey("err_choose_image"); return; }
 
       const btn = $("btn-compress");
+      state.isCompressing = true;
+      showCompressionPreviewLoading();
       btn.disabled = true;
       btn.textContent = t("btn_compressing");
       try {
@@ -1414,28 +1506,53 @@
           if (result.bytes.length > CONFIG.MAX_IMAGE_BYTES) {
             throw new Error(t("err_compress_too_large", { size: result.bytes.length, max: CONFIG.MAX_IMAGE_BYTES }));
           }
+          const modeLabel = formatCompressionModeLabel(result.modeKey, result.modeParams || {});
           state.manualCompression = {
             sourceKey: fileKey(file),
             bytes: result.bytes,
             mimeType: result.mimeType,
-            mode: result.mode,
+            modeKey: result.modeKey,
+            modeParams: result.modeParams || {},
             width: result.width || 0,
             height: result.height || 0,
           };
-          setCompressedPreview(result.bytes, result.mimeType, result.mode);
+          setCompressedPreview(result.bytes, result.mimeType, modeLabel);
           setCompressionResultMeta(t("compress_result_info", {
             width: result.width || "-",
             height: result.height || "-",
             size: fmtBytes(result.bytes.length),
           }));
           $("btn-cancel-compress").classList.remove("hidden");
-          logKey("log_compression_applied", { mode: result.mode, from: file.size, to: result.bytes.length });
+          logKey("log_compression_applied", {
+            modeKey: result.modeKey,
+            modeFactor: result.modeParams?.factor,
+            modeQuality: result.modeParams?.quality,
+            from: file.size,
+            to: result.bytes.length,
+          });
         }
 
         await refreshPreparePreview();
       } catch (err) {
+        if (state.manualCompression) {
+          setCompressedPreview(
+            state.manualCompression.bytes,
+            state.manualCompression.mimeType,
+            formatCompressionModeLabel(state.manualCompression.modeKey, state.manualCompression.modeParams || {})
+          );
+          setCompressionResultMeta(t("compress_result_info", {
+            width: state.manualCompression.width || "-",
+            height: state.manualCompression.height || "-",
+            size: fmtBytes(state.manualCompression.bytes?.length || 0),
+          }));
+          $("btn-cancel-compress").classList.remove("hidden");
+        } else {
+          $("compress-preview").classList.remove("compress-loading");
+          $("compress-preview").textContent = t("compress_preview_original");
+        }
         log(`壓縮失敗: ${err.message}`);
       } finally {
+        state.isCompressing = false;
         btn.disabled = false;
         btn.textContent = t("btn_compress");
       }
@@ -1964,9 +2081,12 @@
     }
 
     function bindEvents() {
-      $("lang-select").addEventListener("change", (e) => {
+      $("lang-select").addEventListener("change", async (e) => {
         state.lang = e.target.value;
         applyLanguage();
+        const hasFile = !!$("file-input").files?.[0];
+        const isUploadingNow = $("btn-upload").disabled;
+        if (hasFile && !isUploadingNow) await refreshPreparePreview();
         $("id-viewer").innerHTML = "";
         loadGallery();
       });
