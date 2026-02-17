@@ -62,7 +62,8 @@ If you wish to deploy your own smart contract:
 2. Deploy the `on_chain_image` Move module.
 3. Copy your new **Package ID**.
 4. Replace the `PACKAGE_ID` constant in `index.html` with your deployed ID.
-<img width="603" height="1208" alt="image" src="https://github.com/user-attachments/assets/27dd6f5f-8c91-4337-9464-0e968acd5618" />
+<img width="563" height="1013" alt="image" src="https://github.com/user-attachments/assets/2cabc388-af41-4406-b441-75fc2de0d09f" />
+
 ---
 
 ## ⚖️ Disclaimer / 免責聲明
