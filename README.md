@@ -1,7 +1,9 @@
+A high-performance, **Fully On-Chain** image storage solution built for the **Sui Network**. This project enables users to store image data directly within Sui Objects using Move smart contracts, featuring advanced client-side compression and end-to-end encryption.
 <p align="center">
   <img src="./icon.png" width="200" alt="Sui Image Uploader Icon">
 </p>
- 🌟 Main Features
+
+ **🌟 Main Features**
 
 ### 🔐 Security & Privacy
 
