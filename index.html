@@ -3,15 +3,18 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <title>Sui 圖片分塊上傳</title>
   <style>
     body { font-family: "Segoe UI", "Noto Sans TC", sans-serif; margin: 0; padding: 20px; background: #0f172a; color: #e2e8f0; }
-    .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+    .card { width: min(100%, 1080px); background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 14px; margin: 0 auto 12px; }
     .topbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
     .topbar h2 { margin: 0; }
     .topbar-actions { display: flex; gap: 8px; }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    @media (max-width: 760px) { .row { grid-template-columns: 1fr; } }
+    @media (max-width: 760px) { .row { grid-template-columns: 1fr; } body { padding: 12px; } }
     .input, .btn { width: 100%; box-sizing: border-box; border-radius: 8px; border: 1px solid #334155; padding: 9px; font-size: 13px; }
     .input { background: #0b1222; color: #e2e8f0; }
     .btn { background: #0ea5e9; color: #fff; border: 0; font-weight: 700; cursor: pointer; }
@@ -25,6 +28,12 @@
     .item { background: #0b1222; border: 1px solid #334155; border-radius: 10px; padding: 8px; }
     .preview { width: 100%; aspect-ratio: 1; border-radius: 8px; border: 1px solid #223044; background: #020617; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 12px; text-align: center; padding: 6px; overflow: hidden; }
     .preview img { width: 100%; height: 100%; object-fit: cover; }
+    #compress-preview { width: min(100%, 500px); height: min(500px, 70vh); margin: 8px auto 0; }
+    #compress-preview img { object-fit: contain; cursor: zoom-in; }
+    .lightbox { position: fixed; inset: 0; z-index: 9999; background: rgba(2, 6, 23, 0.92); display: flex; align-items: center; justify-content: center; padding: 16px; }
+    .lightbox-scroll { max-width: 100%; max-height: 100%; overflow: auto; border: 1px solid #334155; border-radius: 10px; background: #020617; padding: 8px; }
+    .lightbox-scroll img { width: auto; height: auto; max-width: none; max-height: none; display: block; cursor: zoom-out; }
+    .lightbox-hint { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); background: rgba(15, 23, 42, 0.85); border: 1px solid #334155; border-radius: 999px; padding: 8px 14px; font-size: 12px; color: #cbd5e1; pointer-events: none; }
     .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
     .hidden { display: none; }
   </style>
@@ -34,7 +43,7 @@
     <div class="topbar">
       <h2 id="title-main">Sui 分塊上傳 + 密碼保護</h2>
       <div class="topbar-actions">
-        <select id="lang-select" class="input" style="max-width:140px;">
+        <select id="lang-select" class="input" style="width:20ch; min-width:20ch; max-width:20ch;">
           <option value="zh-Hant">繁體中文</option>
           <option value="zh-Hans">简体中文</option>
           <option value="en">English</option>
@@ -62,6 +71,18 @@
       <input id="description-input" class="input" type="text" placeholder="例如：旅遊照片" />
       <label class="meta"><input id="password-toggle" type="checkbox" /> <span id="label-password-toggle">啟用密碼保護</span></label>
       <input id="password-input" class="input" type="password" placeholder="至少 8 字元" disabled />
+      <label id="label-compress" class="meta">圖片壓縮（預設不壓縮）</label>
+      <div class="row">
+        <input id="compress-factor" class="input" type="number" min="1.05" step="0.05" placeholder="縮小倍數，例如 2" />
+        <input id="compress-target-sui" class="input" type="number" min="0.000001" step="0.000001" placeholder="目標 SUI，例如 0.03" />
+      </div>
+      <div id="compress-link-hint" class="meta">調整任一欄位，另一欄會自動連動</div>
+      <div class="row" style="margin-top:8px;">
+        <button id="btn-compress" class="btn btn-secondary">壓縮並套用</button>
+        <button id="btn-cancel-compress" class="btn btn-danger hidden">取消壓縮</button>
+      </div>
+      <div id="compress-preview" class="preview">尚未壓縮</div>
+      <div id="compress-preview-meta" class="meta"></div>
       <div class="row" style="margin-top:8px;">
         <button id="btn-upload" class="btn btn-ok">開始上傳（分塊）</button>
         <button id="btn-refresh" class="btn">重新載入圖片</button>
@@ -91,6 +112,13 @@
     <div id="gallery" class="gallery"></div>
   </section>
 
+  <div id="compress-lightbox" class="lightbox hidden">
+    <div class="lightbox-scroll">
+      <img id="compress-lightbox-img" alt="compressed preview full size" />
+    </div>
+    <div id="compress-lightbox-hint" class="lightbox-hint">按任一處返回頁面</div>
+  </div>
+
   <script type="module">
     import { SuiClient, getFullnodeUrl } from "https://esm.sh/@mysten/sui.js@0.51.0/client";
     import { TransactionBlock } from "https://esm.sh/@mysten/sui.js@0.51.0/transactions";
@@ -113,7 +141,17 @@
       MAX_IMAGE_BYTES: 8000000,
       CHUNK_SIZE_BYTES: 15800,
       CHUNKS_PER_TX: 1,
-      KDF_ROUNDS: 250000,
+      EST_DIRECT_BASE_MIST: 18000000,
+      EST_DIRECT_PER_BYTE_MIST: 5200,
+      EST_START_BASE_MIST: 12000000,
+      EST_APPEND_BASE_MIST: 5000000,
+      EST_APPEND_PER_BYTE_MIST: 3200,
+      EST_FINALIZE_BASE_MIST: 15000000,
+      EST_META_BYTE_MIST: 1200,
+      EST_ENCRYPTED_META_BYTES: 96,
+      EST_ENCRYPTED_DIRECT_EXTRA_MIST: 3000000,
+      EST_ENCRYPTED_SESSION_EXTRA_MIST: 4000000,
+      KDF_ROUNDS: 200000,
       MIN_PASSWORD_LEN: 8,
       TARGET_CHAIN: "sui:mainnet",
       TARGET_NETWORK: "mainnet",
@@ -135,6 +173,9 @@
         return stored;
       })(),
       preparedUpload: null,
+      manualCompression: null,
+      compressionPreviewUrl: null,
+      compressionControl: "factor",
       currentUploadGasMist: 0n,
       logRows: [],
     };
@@ -154,6 +195,15 @@
         label_package: "Package ID",
         btn_apply_package: "套用 Package",
         label_file: "圖片檔案",
+        label_compress: "圖片壓縮（預設不壓縮）",
+        label_compress_link: "調整任一欄位，另一欄會自動連動",
+        compress_mode_factor: "依縮小倍數",
+        compress_mode_target: "依目標 SUI",
+        ph_compress_factor: "縮小倍數，例如 2",
+        ph_compress_target: "目標 SUI，例如 0.03",
+        btn_compress: "壓縮並套用",
+        btn_compressing: "壓縮中...",
+        btn_cancel_compress: "取消壓縮",
         label_description: "圖片描述",
         label_password_toggle: "啟用密碼保護",
         btn_upload: "開始上傳（分塊）",
@@ -167,22 +217,37 @@
         ph_lookup_id: "0x... image id",
         ph_lookup_password: "若有密碼請輸入",
         gas_idle: "GAS: 尚未計算",
+        upload_mode_direct: "單筆直傳",
+        upload_mode_chunked: "分塊上傳",
+        gas_estimate_info: "GAS 預估: 約 {sui} SUI ({mist} MIST) | {mode} | 分塊 {chunks}",
         comp_idle: "壓縮資訊: 尚未選擇圖片",
+        compress_preview_idle: "尚未壓縮",
+        compress_preview_original: "目前使用原圖（未壓縮）",
+        compress_preview_applied: "已套用壓縮預覽",
+        compress_result_none: "",
+        compress_result_info: "壓縮結果: {width} x {height} | {size}",
+        lightbox_back_hint: "按任一處返回頁面",
         progress_idle: "上傳進度: 尚未開始",
         comp_need_wallet: "壓縮資訊: 請先連接錢包",
         comp_calculating: "壓縮資訊: 計算中...",
         comp_failed: "壓縮資訊: 失敗 ({error})",
         gas_unavailable: "GAS: 無法估算 ({error})",
-        comp_info: "壓縮資訊: {orig} -> {upload} bytes ({ratio}% 減少), {mode}, 分塊 {chunks} 段, {enc}",
+        comp_info: "壓縮資訊: {orig} -> {upload} ({ratio}% 減少), {mode}, 分塊 {chunks} 段, {enc}",
+        comp_using_original: "原圖未壓縮",
+        comp_using_compressed: "手動壓縮",
         gas_budget_info: "GAS 預算: start={start} / append={append}(每筆{chunkPerTx}塊) / finalize={finalize} SUI；共 {txCount} 筆",
+        log_compression_applied: "已套用壓縮: {mode}, {from} -> {to} bytes",
+        log_compression_canceled: "已取消壓縮，改用原圖",
+        log_compression_keep_original: "{name} 已符合目標，維持原圖",
+        log_loaded_owned_images: "已載入 {count} 張我的圖片",
         log_booting: "系統啟動中...",
         ready_hint: "就緒：請先連接錢包。若你重發佈合約，請更新 Package ID。",
         address_line: "地址: {address}",
-        chain_forced: "鏈別: {chain} (RPC: {network}, 強制執行)",
+        chain_forced: "鏈別: {chain}",
         card_loading: "載入中...",
         card_no_description: "(無描述)",
         meta_uploader: "上傳者: {uploader}",
-        meta_size_chunks: "大小: {size} bytes | 分塊: {chunks}",
+        meta_size_chunks: "大小: {size} | 分塊: {chunks}",
         meta_public_hint: "公開圖片",
         meta_encrypted_hint: "加密圖片（需要密碼）",
         btn_copy_id: "複製 ID",
@@ -213,6 +278,8 @@
         err_compress_too_large: "壓縮後仍過大 ({size} bytes)，超過 {max} bytes",
         err_wrong_password_or_damaged: "密碼錯誤或圖片資料已損壞",
         err_choose_image: "請先選擇圖片",
+        err_compress_factor_invalid: "請輸入有效的縮小倍數（至少 1.05）",
+        err_compress_target_invalid: "請輸入有效的目標 SUI",
         err_password_min: "密碼至少 {min} 字元",
         err_processed_too_large: "處理後資料過大 ({size} bytes)，超過 {max} bytes",
         err_okx_provider_unavailable: "OKX Sui provider 不可用",
@@ -227,6 +294,15 @@
         label_package: "Package ID",
         btn_apply_package: "应用 Package",
         label_file: "图片文件",
+        label_compress: "图片压缩（默认不压缩）",
+        label_compress_link: "调整任一栏位，另一栏会自动联动",
+        compress_mode_factor: "按缩小倍数",
+        compress_mode_target: "按目标 SUI",
+        ph_compress_factor: "缩小倍数，例如 2",
+        ph_compress_target: "目标 SUI，例如 0.03",
+        btn_compress: "压缩并应用",
+        btn_compressing: "压缩中...",
+        btn_cancel_compress: "取消压缩",
         label_description: "图片描述",
         label_password_toggle: "启用密码保护",
         btn_upload: "开始上传（分块）",
@@ -240,22 +316,37 @@
         ph_lookup_id: "0x... image id",
         ph_lookup_password: "如有密码请输入",
         gas_idle: "GAS: 尚未计算",
+        upload_mode_direct: "单笔直传",
+        upload_mode_chunked: "分块上传",
+        gas_estimate_info: "GAS 预估: 约 {sui} SUI ({mist} MIST) | {mode} | 分块 {chunks}",
         comp_idle: "压缩信息: 尚未选择图片",
+        compress_preview_idle: "尚未压缩",
+        compress_preview_original: "当前使用原图（未压缩）",
+        compress_preview_applied: "已应用压缩预览",
+        compress_result_none: "",
+        compress_result_info: "压缩结果: {width} x {height} | {size}",
+        lightbox_back_hint: "按任一处返回页面",
         progress_idle: "上传进度: 尚未开始",
         comp_need_wallet: "压缩信息: 请先连接钱包",
         comp_calculating: "压缩信息: 计算中...",
         comp_failed: "压缩信息: 失败 ({error})",
         gas_unavailable: "GAS: 无法估算 ({error})",
-        comp_info: "压缩信息: {orig} -> {upload} bytes ({ratio}% 减少), {mode}, 分块 {chunks} 段, {enc}",
+        comp_info: "压缩信息: {orig} -> {upload} ({ratio}% 减少), {mode}, 分块 {chunks} 段, {enc}",
+        comp_using_original: "原图未压缩",
+        comp_using_compressed: "手动压缩",
         gas_budget_info: "GAS 预算: start={start} / append={append}(每笔{chunkPerTx}块) / finalize={finalize} SUI；共 {txCount} 笔",
+        log_compression_applied: "已应用压缩: {mode}, {from} -> {to} bytes",
+        log_compression_canceled: "已取消压缩，改用原图",
+        log_compression_keep_original: "{name} 已符合目标，保持原图",
+        log_loaded_owned_images: "已加载 {count} 张我的图片",
         log_booting: "系统启动中...",
         ready_hint: "就绪：请先连接钱包。若重新发布合约，请更新 Package ID。",
         address_line: "地址: {address}",
-        chain_forced: "链别: {chain} (RPC: {network}, 强制执行)",
+        chain_forced: "链别: {chain}",
         card_loading: "加载中...",
         card_no_description: "(无描述)",
         meta_uploader: "上传者: {uploader}",
-        meta_size_chunks: "大小: {size} bytes | 分块: {chunks}",
+        meta_size_chunks: "大小: {size} | 分块: {chunks}",
         meta_public_hint: "公开图片",
         meta_encrypted_hint: "加密图片（需要密码）",
         btn_copy_id: "复制 ID",
@@ -286,6 +377,8 @@
         err_compress_too_large: "压缩后仍过大 ({size} bytes)，超过 {max} bytes",
         err_wrong_password_or_damaged: "密码错误或图片数据已损坏",
         err_choose_image: "请先选择图片",
+        err_compress_factor_invalid: "请输入有效的缩小倍数（至少 1.05）",
+        err_compress_target_invalid: "请输入有效的目标 SUI",
         err_password_min: "密码至少 {min} 个字符",
         err_processed_too_large: "处理后数据过大 ({size} bytes)，超过 {max} bytes",
         err_okx_provider_unavailable: "OKX Sui provider 不可用",
@@ -300,6 +393,15 @@
         label_package: "Package ID",
         btn_apply_package: "Apply Package",
         label_file: "Image File",
+        label_compress: "Image Compression (default: off)",
+        label_compress_link: "Editing one field auto-syncs the other",
+        compress_mode_factor: "By scale factor",
+        compress_mode_target: "By target SUI",
+        ph_compress_factor: "Scale factor, e.g. 2",
+        ph_compress_target: "Target SUI, e.g. 0.03",
+        btn_compress: "Compress and apply",
+        btn_compressing: "Compressing...",
+        btn_cancel_compress: "Cancel compression",
         label_description: "Image Description",
         label_password_toggle: "Enable Password Protection",
         btn_upload: "Start Upload (Chunked)",
@@ -313,22 +415,37 @@
         ph_lookup_id: "0x... image id",
         ph_lookup_password: "Enter password if needed",
         gas_idle: "GAS: Not calculated yet",
+        upload_mode_direct: "single transaction",
+        upload_mode_chunked: "chunked upload",
+        gas_estimate_info: "GAS estimate: about {sui} SUI ({mist} MIST) | {mode} | chunks: {chunks}",
         comp_idle: "Compression: No image selected",
+        compress_preview_idle: "No compression applied",
+        compress_preview_original: "Using original image (no compression)",
+        compress_preview_applied: "Compressed preview applied",
+        compress_result_none: "",
+        compress_result_info: "Compressed: {width} x {height} | {size}",
+        lightbox_back_hint: "Tap anywhere to return",
         progress_idle: "Upload progress: Not started",
         comp_need_wallet: "Compression: connect wallet first",
         comp_calculating: "Compression: calculating...",
         comp_failed: "Compression: failed ({error})",
         gas_unavailable: "GAS: estimate unavailable ({error})",
-        comp_info: "Compression: {orig} -> {upload} bytes ({ratio}% reduced), {mode}, chunks: {chunks}, {enc}",
+        comp_info: "Compression: {orig} -> {upload} ({ratio}% reduced), {mode}, chunks: {chunks}, {enc}",
+        comp_using_original: "Original (no compression)",
+        comp_using_compressed: "Manual compression",
         gas_budget_info: "GAS budget: start={start} / append={append} ({chunkPerTx} chunk/tx) / finalize={finalize} SUI; total {txCount} tx",
+        log_compression_applied: "Compression applied: {mode}, {from} -> {to} bytes",
+        log_compression_canceled: "Compression canceled, using original image",
+        log_compression_keep_original: "{name} already meets target, keeping original",
+        log_loaded_owned_images: "Loaded {count} owned images",
         log_booting: "System booting...",
         ready_hint: "Ready: connect wallet first. If you republish the contract, update Package ID.",
         address_line: "Address: {address}",
-        chain_forced: "Chain: {chain} (RPC: {network}, forced)",
+        chain_forced: "Chain: {chain}",
         card_loading: "Loading...",
         card_no_description: "(No description)",
         meta_uploader: "Uploader: {uploader}",
-        meta_size_chunks: "Size: {size} bytes | Chunks: {chunks}",
+        meta_size_chunks: "Size: {size} | Chunks: {chunks}",
         meta_public_hint: "Public image",
         meta_encrypted_hint: "Encrypted image (password required)",
         btn_copy_id: "Copy ID",
@@ -359,6 +476,8 @@
         err_compress_too_large: "Compressed result is still too large ({size} bytes), over {max} bytes",
         err_wrong_password_or_damaged: "Wrong password or image data is corrupted",
         err_choose_image: "Please select an image first",
+        err_compress_factor_invalid: "Please enter a valid scale factor (>= 1.05)",
+        err_compress_target_invalid: "Please enter a valid target SUI",
         err_password_min: "Password must be at least {min} characters",
         err_processed_too_large: "Processed data is too large ({size} bytes), over {max} bytes",
         err_okx_provider_unavailable: "OKX Sui provider unavailable",
@@ -373,6 +492,15 @@
         label_package: "Package ID",
         btn_apply_package: "Package を適用",
         label_file: "画像ファイル",
+        label_compress: "画像圧縮（初期値: 圧縮なし）",
+        label_compress_link: "どちらかを変更すると、もう一方も自動同期されます",
+        compress_mode_factor: "縮小倍率で指定",
+        compress_mode_target: "目標 SUI で指定",
+        ph_compress_factor: "縮小倍率（例: 2）",
+        ph_compress_target: "目標 SUI（例: 0.03）",
+        btn_compress: "圧縮して適用",
+        btn_compressing: "圧縮中...",
+        btn_cancel_compress: "圧縮を取り消す",
         label_description: "画像の説明",
         label_password_toggle: "パスワード保護を有効化",
         btn_upload: "アップロード開始（分割）",
@@ -386,22 +514,37 @@
         ph_lookup_id: "0x... image id",
         ph_lookup_password: "必要ならパスワード入力",
         gas_idle: "GAS: 未計算",
+        upload_mode_direct: "単一トランザクション",
+        upload_mode_chunked: "分割アップロード",
+        gas_estimate_info: "GAS 見積: 約 {sui} SUI ({mist} MIST) | {mode} | チャンク {chunks}",
         comp_idle: "圧縮情報: 画像未選択",
+        compress_preview_idle: "圧縮はまだ適用されていません",
+        compress_preview_original: "現在は原図を使用（圧縮なし）",
+        compress_preview_applied: "圧縮プレビューを適用済み",
+        compress_result_none: "",
+        compress_result_info: "圧縮結果: {width} x {height} | {size}",
+        lightbox_back_hint: "任意の場所を押すと戻ります",
         progress_idle: "アップロード進捗: 未開始",
         comp_need_wallet: "圧縮情報: 先にウォレットを接続してください",
         comp_calculating: "圧縮情報: 計算中...",
         comp_failed: "圧縮情報: 失敗 ({error})",
         gas_unavailable: "GAS: 見積不可 ({error})",
-        comp_info: "圧縮情報: {orig} -> {upload} bytes ({ratio}% 削減), {mode}, チャンク {chunks}, {enc}",
+        comp_info: "圧縮情報: {orig} -> {upload} ({ratio}% 削減), {mode}, チャンク {chunks}, {enc}",
+        comp_using_original: "原図（圧縮なし）",
+        comp_using_compressed: "手動圧縮",
         gas_budget_info: "GAS 予算: start={start} / append={append}(1Txあたり{chunkPerTx}チャンク) / finalize={finalize} SUI; 合計 {txCount} 件",
+        log_compression_applied: "圧縮を適用しました: {mode}, {from} -> {to} bytes",
+        log_compression_canceled: "圧縮を取り消し、原図を使用します",
+        log_compression_keep_original: "{name} は目標を満たしているため原図を使用します",
+        log_loaded_owned_images: "所有画像を {count} 件読み込みました",
         log_booting: "システム起動中...",
         ready_hint: "準備完了: 先にウォレットを接続してください。再デプロイ時は Package ID を更新してください。",
         address_line: "アドレス: {address}",
-        chain_forced: "チェーン: {chain} (RPC: {network}, 強制)",
+        chain_forced: "チェーン: {chain}",
         card_loading: "読み込み中...",
         card_no_description: "(説明なし)",
         meta_uploader: "アップローダー: {uploader}",
-        meta_size_chunks: "サイズ: {size} bytes | チャンク: {chunks}",
+        meta_size_chunks: "サイズ: {size} | チャンク: {chunks}",
         meta_public_hint: "公開画像",
         meta_encrypted_hint: "暗号化画像（パスワード必須）",
         btn_copy_id: "ID をコピー",
@@ -432,6 +575,8 @@
         err_compress_too_large: "圧縮後もサイズ超過です ({size} bytes), 上限 {max} bytes",
         err_wrong_password_or_damaged: "パスワードが正しくないか、画像データが破損しています",
         err_choose_image: "先に画像を選択してください",
+        err_compress_factor_invalid: "有効な縮小倍率を入力してください（1.05 以上）",
+        err_compress_target_invalid: "有効な目標 SUI を入力してください",
         err_password_min: "パスワードは最低 {min} 文字必要です",
         err_processed_too_large: "処理後データが大きすぎます ({size} bytes), 上限 {max} bytes",
         err_okx_provider_unavailable: "OKX Sui provider を利用できません",
@@ -446,6 +591,15 @@
         label_package: "Package ID",
         btn_apply_package: "Package 적용",
         label_file: "이미지 파일",
+        label_compress: "이미지 압축(기본: 압축 안 함)",
+        label_compress_link: "한쪽 값을 바꾸면 다른 쪽도 자동으로 동기화됩니다",
+        compress_mode_factor: "축소 배율 기준",
+        compress_mode_target: "목표 SUI 기준",
+        ph_compress_factor: "축소 배율(예: 2)",
+        ph_compress_target: "목표 SUI(예: 0.03)",
+        btn_compress: "압축 후 적용",
+        btn_compressing: "압축 중...",
+        btn_cancel_compress: "압축 취소",
         label_description: "이미지 설명",
         label_password_toggle: "비밀번호 보호 사용",
         btn_upload: "업로드 시작(청크)",
@@ -459,22 +613,37 @@
         ph_lookup_id: "0x... image id",
         ph_lookup_password: "필요 시 비밀번호 입력",
         gas_idle: "GAS: 아직 계산되지 않음",
+        upload_mode_direct: "단일 트랜잭션",
+        upload_mode_chunked: "청크 업로드",
+        gas_estimate_info: "GAS 예상: 약 {sui} SUI ({mist} MIST) | {mode} | 청크 {chunks}",
         comp_idle: "압축 정보: 이미지 미선택",
+        compress_preview_idle: "아직 압축이 적용되지 않았습니다",
+        compress_preview_original: "현재 원본 이미지 사용(압축 없음)",
+        compress_preview_applied: "압축 미리보기가 적용되었습니다",
+        compress_result_none: "",
+        compress_result_info: "압축 결과: {width} x {height} | {size}",
+        lightbox_back_hint: "아무 곳이나 누르면 돌아갑니다",
         progress_idle: "업로드 진행: 미시작",
         comp_need_wallet: "압축 정보: 먼저 지갑을 연결하세요",
         comp_calculating: "압축 정보: 계산 중...",
         comp_failed: "압축 정보: 실패 ({error})",
         gas_unavailable: "GAS: 추정 불가 ({error})",
-        comp_info: "압축 정보: {orig} -> {upload} bytes ({ratio}% 감소), {mode}, 청크 {chunks}개, {enc}",
+        comp_info: "압축 정보: {orig} -> {upload} ({ratio}% 감소), {mode}, 청크 {chunks}개, {enc}",
+        comp_using_original: "원본(압축 없음)",
+        comp_using_compressed: "수동 압축",
         gas_budget_info: "GAS 예산: start={start} / append={append}(tx당 {chunkPerTx}청크) / finalize={finalize} SUI; 총 {txCount}건",
+        log_compression_applied: "압축 적용됨: {mode}, {from} -> {to} bytes",
+        log_compression_canceled: "압축 취소, 원본 이미지 사용",
+        log_compression_keep_original: "{name} 은(는) 이미 목표를 충족하여 원본을 유지합니다",
+        log_loaded_owned_images: "내 이미지 {count}개를 불러왔습니다",
         log_booting: "시스템 시작 중...",
         ready_hint: "준비됨: 먼저 지갑을 연결하세요. 재배포 시 Package ID를 업데이트하세요.",
         address_line: "주소: {address}",
-        chain_forced: "체인: {chain} (RPC: {network}, 강제)",
+        chain_forced: "체인: {chain}",
         card_loading: "로딩 중...",
         card_no_description: "(설명 없음)",
         meta_uploader: "업로더: {uploader}",
-        meta_size_chunks: "크기: {size} bytes | 청크: {chunks}",
+        meta_size_chunks: "크기: {size} | 청크: {chunks}",
         meta_public_hint: "공개 이미지",
         meta_encrypted_hint: "암호화 이미지(비밀번호 필요)",
         btn_copy_id: "ID 복사",
@@ -505,6 +674,8 @@
         err_compress_too_large: "압축 후에도 너무 큽니다 ({size} bytes), 제한 {max} bytes",
         err_wrong_password_or_damaged: "비밀번호가 틀렸거나 이미지 데이터가 손상되었습니다",
         err_choose_image: "먼저 이미지를 선택하세요",
+        err_compress_factor_invalid: "유효한 축소 배율을 입력하세요(1.05 이상)",
+        err_compress_target_invalid: "유효한 목표 SUI를 입력하세요",
         err_password_min: "비밀번호는 최소 {min}자여야 합니다",
         err_processed_too_large: "처리 후 데이터가 너무 큽니다 ({size} bytes), 제한 {max} bytes",
         err_okx_provider_unavailable: "OKX Sui provider를 사용할 수 없습니다",
@@ -520,10 +691,19 @@
         "完成上傳": "完成上传", "取消失敗上傳會話": "取消失败上传会话", "清理會話失敗": "清理会话失败",
         "請先連接錢包": "请先连接钱包", "請先輸入密碼": "请先输入密码", "請先輸入 Object ID": "请输入 Object ID",
         "查詢失敗": "查询失败", "載入失敗": "加载失败", "下載失敗": "下载失败", "刪除失敗": "删除失败",
-        "刪除圖片中": "正在删除图片", "已下載圖片": "已下载图片", "已複製 ID": "已复制 ID",
+        "刪除圖片": "删除图片", "刪除圖片中": "正在删除图片", "已下載圖片": "已下载图片", "已複製 ID": "已复制 ID",
         "失敗": "失败", "成功": "成功", "載入": "加载", "圖片": "图片", "密碼": "密码", "錢包": "钱包",
         "鏈別": "链别", "地址": "地址", "刪除": "删除", "下載": "下载", "查詢": "查询",
-        "尚未開始": "尚未开始", "尚未選擇圖片": "尚未选择图片", "尚未計算": "尚未计算"
+        "尚未開始": "尚未开始", "尚未選擇圖片": "尚未选择图片", "尚未計算": "尚未计算",
+        "壓縮失敗": "压缩失败", "目前網路": "当前网络", "查不到 Package ID": "找不到 Package ID",
+        "SUI 餘額不足，至少需要": "SUI 余额不足，至少需要", "錢包沒有回傳帳號": "钱包没有返回账号",
+        "此錢包不支援 Sui 簽名 API": "此钱包不支持 Sui 签名 API", "單筆直傳上傳": "单笔直传上传",
+        "準備上傳": "准备上传", "計算中": "计算中", "單筆直傳失敗，回退分塊流程": "单笔直传失败，回退分块流程",
+        "已建立會話": "已建立会话", "請看下方清單": "请看下方清单", "刪除返還 SUI": "删除返还 SUI",
+        "Package ID 不能為空": "Package ID 不能为空", "已更新 Package ID": "已更新 Package ID",
+        "Package ID 套用成功": "Package ID 应用成功", "Package 驗證失敗": "Package 验证失败",
+        "為加密圖片，請先輸入密碼": "为加密图片，请先输入密码", "這不是 Image 物件": "这不是 Image 对象",
+        "已載入 ID": "已载入 ID", "GAS: 累計": "GAS: 累计"
       },
       en: {
         "開始連接": "Connecting", "錢包已連線": "Wallet connected", "環境檢查通過": "environment checks passed", "連線失敗": "Connection failed",
@@ -532,9 +712,18 @@
         "完成上傳": "Finalize upload", "取消失敗上傳會話": "Cancel failed upload session", "清理會話失敗": "Session cleanup failed",
         "請先連接錢包": "Please connect wallet first", "請先輸入密碼": "Please enter password first", "請先輸入 Object ID": "Please enter Object ID",
         "查詢失敗": "Lookup failed", "載入失敗": "Load failed", "下載失敗": "Download failed", "刪除失敗": "Delete failed",
-        "刪除圖片中": "Deleting image", "已下載圖片": "Image downloaded", "已複製 ID": "Copied ID",
+        "刪除圖片": "Delete image", "刪除圖片中": "Deleting image", "已下載圖片": "Image downloaded", "已複製 ID": "Copied ID",
         "圖片": "image", "密碼": "password", "錢包": "wallet", "鏈別": "Chain", "地址": "Address",
-        "尚未開始": "Not started", "尚未選擇圖片": "No image selected", "尚未計算": "Not calculated yet"
+        "尚未開始": "Not started", "尚未選擇圖片": "No image selected", "尚未計算": "Not calculated yet",
+        "壓縮失敗": "Compression failed", "目前網路": "Current network", "查不到 Package ID": "Package ID not found",
+        "SUI 餘額不足，至少需要": "Insufficient SUI balance, at least required:", "錢包沒有回傳帳號": "Wallet did not return an account",
+        "此錢包不支援 Sui 簽名 API": "This wallet does not support Sui signing API", "單筆直傳上傳": "Single direct upload",
+        "準備上傳": "Preparing upload", "計算中": "calculating", "單筆直傳失敗，回退分塊流程": "Direct upload failed, fallback to chunked flow",
+        "已建立會話": "Session created", "請看下方清單": "check the list below", "刪除返還 SUI": "Delete rebate SUI",
+        "Package ID 不能為空": "Package ID cannot be empty", "已更新 Package ID": "Package ID updated",
+        "Package ID 套用成功": "Package ID applied successfully", "Package 驗證失敗": "Package validation failed",
+        "為加密圖片，請先輸入密碼": "is encrypted, please enter password first", "這不是 Image 物件": "This is not an Image object",
+        "已載入 ID": "Loaded ID", "GAS: 累計": "GAS: cumulative"
       },
       ja: {
         "開始連接": "接続中", "錢包已連線": "ウォレット接続完了", "環境檢查通過": "環境チェック成功", "連線失敗": "接続失敗",
@@ -543,8 +732,17 @@
         "完成上傳": "アップロード完了処理", "取消失敗上傳會話": "失敗セッション取消", "清理會話失敗": "セッションクリーンアップ失敗",
         "請先連接錢包": "先にウォレットを接続してください", "請先輸入密碼": "先にパスワードを入力してください", "請先輸入 Object ID": "Object ID を入力してください",
         "查詢失敗": "検索失敗", "載入失敗": "読み込み失敗", "下載失敗": "ダウンロード失敗", "刪除失敗": "削除失敗",
-        "刪除圖片中": "画像削除中", "已下載圖片": "画像をダウンロードしました", "已複製 ID": "ID をコピーしました",
-        "圖片": "画像", "密碼": "パスワード", "錢包": "ウォレット", "鏈別": "チェーン", "地址": "アドレス"
+        "刪除圖片": "画像削除", "刪除圖片中": "画像削除中", "已下載圖片": "画像をダウンロードしました", "已複製 ID": "ID をコピーしました",
+        "圖片": "画像", "密碼": "パスワード", "錢包": "ウォレット", "鏈別": "チェーン", "地址": "アドレス",
+        "壓縮失敗": "圧縮失敗", "目前網路": "現在のネットワーク", "查不到 Package ID": "Package ID が見つかりません",
+        "SUI 餘額不足，至少需要": "SUI 残高不足、最低必要:", "錢包沒有回傳帳號": "ウォレットからアカウントが返されませんでした",
+        "此錢包不支援 Sui 簽名 API": "このウォレットは Sui 署名 API をサポートしていません", "單筆直傳上傳": "単発直接アップロード",
+        "準備上傳": "アップロード準備", "計算中": "計算中", "單筆直傳失敗，回退分塊流程": "単発アップロード失敗、分割フローへフォールバック",
+        "已建立會話": "セッション作成済み", "請看下方清單": "下の一覧を確認してください", "刪除返還 SUI": "削除返還 SUI",
+        "Package ID 不能為空": "Package ID は空にできません", "已更新 Package ID": "Package ID を更新しました",
+        "Package ID 套用成功": "Package ID の適用に成功しました", "Package 驗證失敗": "Package 検証失敗",
+        "為加密圖片，請先輸入密碼": "暗号化画像のため、先にパスワードを入力してください", "這不是 Image 物件": "これは Image オブジェクトではありません",
+        "已載入 ID": "ID を読み込みました", "GAS: 累計": "GAS: 累計"
       },
       ko: {
         "開始連接": "연결 중", "錢包已連線": "지갑 연결 완료", "環境檢查通過": "환경 점검 통과", "連線失敗": "연결 실패",
@@ -553,8 +751,17 @@
         "完成上傳": "업로드 완료 처리", "取消失敗上傳會話": "실패 세션 취소", "清理會話失敗": "세션 정리 실패",
         "請先連接錢包": "먼저 지갑을 연결하세요", "請先輸入密碼": "먼저 비밀번호를 입력하세요", "請先輸入 Object ID": "Object ID를 입력하세요",
         "查詢失敗": "조회 실패", "載入失敗": "불러오기 실패", "下載失敗": "다운로드 실패", "刪除失敗": "삭제 실패",
-        "刪除圖片中": "이미지 삭제 중", "已下載圖片": "이미지 다운로드 완료", "已複製 ID": "ID 복사 완료",
-        "圖片": "이미지", "密碼": "비밀번호", "錢包": "지갑", "鏈別": "체인", "地址": "주소"
+        "刪除圖片": "이미지 삭제", "刪除圖片中": "이미지 삭제 중", "已下載圖片": "이미지 다운로드 완료", "已複製 ID": "ID 복사 완료",
+        "圖片": "이미지", "密碼": "비밀번호", "錢包": "지갑", "鏈別": "체인", "地址": "주소",
+        "壓縮失敗": "압축 실패", "目前網路": "현재 네트워크", "查不到 Package ID": "Package ID를 찾을 수 없습니다",
+        "SUI 餘額不足，至少需要": "SUI 잔액 부족, 최소 필요:", "錢包沒有回傳帳號": "지갑이 계정을 반환하지 않았습니다",
+        "此錢包不支援 Sui 簽名 API": "이 지갑은 Sui 서명 API를 지원하지 않습니다", "單筆直傳上傳": "단일 직접 업로드",
+        "準備上傳": "업로드 준비", "計算中": "계산 중", "單筆直傳失敗，回退分塊流程": "직접 업로드 실패, 청크 업로드로 전환",
+        "已建立會話": "세션 생성됨", "請看下方清單": "아래 목록을 확인하세요", "刪除返還 SUI": "삭제 반환 SUI",
+        "Package ID 不能為空": "Package ID는 비워둘 수 없습니다", "已更新 Package ID": "Package ID가 업데이트되었습니다",
+        "Package ID 套用成功": "Package ID 적용 성공", "Package 驗證失敗": "Package 검증 실패",
+        "為加密圖片，請先輸入密碼": "암호화 이미지입니다. 먼저 비밀번호를 입력하세요", "這不是 Image 物件": "Image 객체가 아닙니다",
+        "已載入 ID": "ID를 불러왔습니다", "GAS: 累計": "GAS: 누적"
       },
     };
 
@@ -583,6 +790,13 @@
       $("label-package").textContent = t("label_package");
       $("btn-apply-package").textContent = t("btn_apply_package");
       $("label-file").textContent = t("label_file");
+      $("label-compress").textContent = t("label_compress");
+      $("compress-link-hint").textContent = t("label_compress_link");
+      $("compress-lightbox-hint").textContent = t("lightbox_back_hint");
+      $("compress-factor").placeholder = t("ph_compress_factor");
+      $("compress-target-sui").placeholder = t("ph_compress_target");
+      $("btn-compress").textContent = $("btn-compress").disabled ? t("btn_compressing") : t("btn_compress");
+      $("btn-cancel-compress").textContent = t("btn_cancel_compress");
       $("label-description").textContent = t("label_description");
       $("label-password-toggle").textContent = t("label_password_toggle");
       $("btn-upload").textContent = $("btn-upload").disabled ? t("btn_uploading") : t("btn_upload");
@@ -590,14 +804,28 @@
       $("title-lookup").textContent = t("title_lookup");
       $("btn-lookup").textContent = t("btn_lookup");
       $("title-gallery").textContent = t("title_gallery");
+      $("address").textContent = state.address ? t("address_line", { address: state.address }) : "";
+      $("chain").textContent = state.chain ? t("chain_forced", { chain: state.chain, network: CONFIG.TARGET_NETWORK }) : "";
       $("description-input").placeholder = t("ph_description");
       $("password-input").placeholder = t("ph_password");
       $("lookup-id").placeholder = t("ph_lookup_id");
       $("lookup-password").placeholder = t("ph_lookup_password");
-      if (!isConnected()) {
+      const noSelectedFile = !$("file-input").files?.[0];
+      const isUploadingNow = $("btn-upload").disabled;
+      if (noSelectedFile && !isUploadingNow) {
         setGas(t("gas_idle"));
         setComp(t("comp_idle"));
         setProg(t("progress_idle"));
+      }
+      if (!state.manualCompression) {
+        $("compress-preview").textContent = $("file-input").files?.[0] ? t("compress_preview_original") : t("compress_preview_idle");
+        if (!$("file-input").files?.[0]) setCompressionResultMeta(t("compress_result_none"));
+      } else {
+        setCompressionResultMeta(t("compress_result_info", {
+          width: state.manualCompression.width || "-",
+          height: state.manualCompression.height || "-",
+          size: fmtBytes(state.manualCompression.bytes?.length || 0),
+        }));
       }
       renderLog();
     }
@@ -611,17 +839,34 @@
       e.textContent = lines.join("\n");
       e.scrollTop = e.scrollHeight;
     }
+    function nowAmPmTime() {
+      return new Date().toLocaleTimeString("en-US", {
+        hour12: true,
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
+    }
     function log(msg) {
-      state.logRows.push({ time: new Date().toLocaleTimeString(), raw: String(msg) });
+      state.logRows.push({ time: nowAmPmTime(), raw: String(msg) });
       renderLog();
     }
     function logKey(key, vars = {}) {
-      state.logRows.push({ time: new Date().toLocaleTimeString(), key, vars });
+      state.logRows.push({ time: nowAmPmTime(), key, vars });
       renderLog();
     }
     function setGas(text) { $("gas-estimate").textContent = tl(text); }
     function setComp(text) { $("compression-info").textContent = tl(text); }
     function setProg(text) { $("upload-progress").textContent = tl(text); }
+    function fmtBytes(bytes) {
+      const b = Number(bytes || 0);
+      if (b < 1024) return `${b} B`;
+      if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+      return `${(b / (1024 * 1024)).toFixed(2)} MB`;
+    }
+    function setCompressionResultMeta(text = "") {
+      $("compress-preview-meta").textContent = tl(text || "");
+    }
     function toBigInt(v) { try { return BigInt(v ?? 0); } catch { return 0n; } }
     function fmtSui(m) { const v = toBigInt(m); return `${(v / MIST_PER_SUI).toString()}.${(v % MIST_PER_SUI).toString().padStart(9, "0").slice(0, 6)}`; }
     function netGas(g) { const c = toBigInt(g?.computationCost); const s = toBigInt(g?.storageCost); const r = toBigInt(g?.storageRebate); const n = c + s - r; return n > 0n ? n : 0n; }
@@ -630,6 +875,117 @@
     function b(raw) { if (Array.isArray(raw)) return raw.map((x) => Number(x)); if (raw && Array.isArray(raw.bytes)) return raw.bytes.map((x) => Number(x)); return []; }
     function short(a) { if (!a || a.length < 14) return a || ""; return `${a.slice(0, 8)}...${a.slice(-6)}`; }
     function isConnected() { return !!state.address && ((state.walletType === "okx" && !!state.okxSui) || !!state.wallet); }
+    function fileKey(file) { return `${file.name}:${file.size}:${file.lastModified}`; }
+    function parseSuiToMist(input) {
+      const raw = String(input || "").trim();
+      if (!raw) return null;
+      if (!/^\d+(\.\d+)?$/.test(raw)) return null;
+      const [intPart, fracPart = ""] = raw.split(".");
+      const whole = BigInt(intPart || "0");
+      const frac = BigInt((fracPart + "000000000").slice(0, 9));
+      return whole * MIST_PER_SUI + frac;
+    }
+    function estimateTotalGasMist(dataBytes, chunkCount, description, mimeType, isEncrypted) {
+      const bytes = BigInt(Math.max(0, Number(dataBytes) || 0));
+      const chunks = Math.max(1, Number(chunkCount) || 1);
+      const descBytes = BigInt(te.encode(String(description || "")).length);
+      const mimeBytes = BigInt(te.encode(String(mimeType || "")).length);
+      const encryptedMetaBytes = isEncrypted ? BigInt(CONFIG.EST_ENCRYPTED_META_BYTES) : 0n;
+      const extraMetaBytes = descBytes + mimeBytes + encryptedMetaBytes;
+
+      let total = 0n;
+      if (chunks === 1) {
+        total = BigInt(CONFIG.EST_DIRECT_BASE_MIST) + bytes * BigInt(CONFIG.EST_DIRECT_PER_BYTE_MIST);
+        if (isEncrypted) total += BigInt(CONFIG.EST_ENCRYPTED_DIRECT_EXTRA_MIST);
+      } else {
+        total = BigInt(CONFIG.EST_START_BASE_MIST) + BigInt(CONFIG.EST_FINALIZE_BASE_MIST);
+        if (isEncrypted) total += BigInt(CONFIG.EST_ENCRYPTED_SESSION_EXTRA_MIST);
+        let remain = Number(bytes);
+        for (let i = 0; i < chunks; i += 1) {
+          const each = Math.min(CONFIG.CHUNK_SIZE_BYTES, remain);
+          remain -= each;
+          total += BigInt(CONFIG.EST_APPEND_BASE_MIST) + BigInt(each) * BigInt(CONFIG.EST_APPEND_PER_BYTE_MIST);
+        }
+      }
+      total += extraMetaBytes * BigInt(CONFIG.EST_META_BYTE_MIST);
+      return total > 0n ? total : 0n;
+    }
+    function estimateMistByPayloadBytes(payloadBytes, mimeType) {
+      const file = $("file-input").files?.[0];
+      const description = $("description-input").value.trim() || file?.name || "image";
+      const usePassword = $("password-toggle").checked;
+      const totalBytes = Number(payloadBytes) + (usePassword ? 16 : 0);
+      const chunks = Math.max(1, Math.ceil(totalBytes / CONFIG.CHUNK_SIZE_BYTES));
+      return estimateTotalGasMist(totalBytes, chunks, description, mimeType || file?.type || "image/webp", usePassword);
+    }
+    function syncTargetFromFactor() {
+      const file = $("file-input").files?.[0];
+      if (!file) return;
+      const factor = Number($("compress-factor").value);
+      if (!(factor >= 1.05)) return;
+      const predictedBytes = Math.max(1, Math.floor(file.size / Math.pow(factor, 2)));
+      const mist = estimateMistByPayloadBytes(predictedBytes, "image/webp");
+      $("compress-target-sui").value = fmtSui(mist);
+    }
+    function syncFactorFromTarget() {
+      const file = $("file-input").files?.[0];
+      if (!file) return;
+      const targetMist = parseSuiToMist($("compress-target-sui").value);
+      if (!targetMist || targetMist <= 0n) return;
+      const rawMist = estimateMistByPayloadBytes(file.size, file.type || "image/webp");
+      if (targetMist >= rawMist) {
+        $("compress-factor").value = "1.05";
+        return;
+      }
+      const ratio = Number(rawMist) / Number(targetMist);
+      const factor = Math.max(1.05, Math.min(12, Math.sqrt(Math.max(1, ratio))));
+      $("compress-factor").value = factor.toFixed(2);
+    }
+    function syncCompressionLinkedFields() {
+      if (state.compressionControl === "target") syncFactorFromTarget();
+      else syncTargetFromFactor();
+    }
+    function setCompressedPreview(bytes, mimeType, hintText = "") {
+      const el = $("compress-preview");
+      if (state.compressionPreviewUrl) {
+        URL.revokeObjectURL(state.compressionPreviewUrl);
+        state.compressionPreviewUrl = null;
+      }
+      const blob = new Blob([bytes], { type: mimeType || "image/webp" });
+      const url = URL.createObjectURL(blob);
+      state.compressionPreviewUrl = url;
+      el.innerHTML = "";
+      const img = document.createElement("img");
+      img.src = url;
+      img.alt = "compressed preview";
+      el.appendChild(img);
+      if (hintText) el.title = hintText;
+    }
+    function openLightbox(url) {
+      if (!url) return;
+      $("compress-lightbox-img").src = url;
+      $("compress-lightbox").classList.remove("hidden");
+    }
+    function closeLightbox() {
+      $("compress-lightbox").classList.add("hidden");
+      $("compress-lightbox-img").removeAttribute("src");
+    }
+    function toggleLightbox(url) {
+      const box = $("compress-lightbox");
+      if (box.classList.contains("hidden")) openLightbox(url);
+      else closeLightbox();
+    }
+    function clearManualCompression() {
+      state.manualCompression = null;
+      closeLightbox();
+      if (state.compressionPreviewUrl) {
+        URL.revokeObjectURL(state.compressionPreviewUrl);
+        state.compressionPreviewUrl = null;
+      }
+      $("btn-cancel-compress").classList.add("hidden");
+      $("compress-preview").textContent = $("file-input").files?.[0] ? t("compress_preview_original") : t("compress_preview_idle");
+      setCompressionResultMeta(t("compress_result_none"));
+    }
 
     function resetUiAfterDisconnect() {
       state.wallet = null;
@@ -649,6 +1005,9 @@
       $("id-viewer").innerHTML = "";
       $("file-input").value = "";
       $("password-input").value = "";
+      $("compress-factor").value = "";
+      $("compress-target-sui").value = "";
+      clearManualCompression();
       setGas(t("gas_idle"));
       setComp(t("comp_idle"));
       setProg(t("progress_idle"));
@@ -770,46 +1129,108 @@
       if (!ctx) throw new Error(t("err_canvas_context"));
       ctx.drawImage(img, 0, 0, w, h);
       const blob = await canvasToBlob(canvas, mimeType, quality);
-      return { bytes: new Uint8Array(await blob.arrayBuffer()), mimeType, label };
+      return { bytes: new Uint8Array(await blob.arrayBuffer()), mimeType, label, width: w, height: h };
     }
 
-    async function compressNearLossless(file) {
+    async function getSourceUploadAsset(file) {
       const rawBytes = new Uint8Array(await file.arrayBuffer());
-      const rawMime = file.type || "image/png";
+      const rawMime = file.type || "application/octet-stream";
       if (!rawMime.startsWith("image/")) throw new Error(t("err_only_image_supported"));
 
-      const img = await fileToImage(file);
-      let best = { bytes: rawBytes, mimeType: rawMime, label: "original" };
-      const strongQ = [1.0, 0.995, 0.99, 0.985, 0.98];
-
-      for (const q of strongQ) {
-        const c = await encodeCandidate(img, 1.0, "image/webp", q, `webp-q${q}`);
-        if (c.bytes.length < best.bytes.length) best = c;
-      }
-
-      if (best.bytes.length > CONFIG.MAX_IMAGE_BYTES) {
-        const scales = [0.95, 0.9, 0.85, 0.8, 0.75, 0.7];
-        const qs = [0.99, 0.97, 0.95];
-        for (const s of scales) {
-          for (const q of qs) {
-            const c = await encodeCandidate(img, s, "image/webp", q, `webp-${s}-q${q}`);
-            if (c.bytes.length < best.bytes.length) best = c;
-            if (best.bytes.length <= CONFIG.MAX_IMAGE_BYTES) break;
-          }
-          if (best.bytes.length <= CONFIG.MAX_IMAGE_BYTES) break;
-        }
-      }
-
-      if (best.bytes.length > CONFIG.MAX_IMAGE_BYTES) {
-        throw new Error(t("err_compress_too_large", { size: best.bytes.length, max: CONFIG.MAX_IMAGE_BYTES }));
+      const manual = state.manualCompression;
+      if (manual && manual.sourceKey === fileKey(file)) {
+        return {
+          originalBytes: rawBytes.length,
+          bytes: manual.bytes,
+          mimeType: manual.mimeType,
+          compressionMode: manual.mode,
+        };
       }
 
       return {
         originalBytes: rawBytes.length,
-        uploadBytes: best.bytes.length,
-        mimeType: best.mimeType,
+        bytes: rawBytes,
+        mimeType: rawMime,
+        compressionMode: t("comp_using_original"),
+      };
+    }
+
+    async function compressWithFactor(file, factor) {
+      if (!(factor >= 1.05)) throw new Error(t("err_compress_factor_invalid"));
+      const rawMime = file.type || "image/png";
+      if (!rawMime.startsWith("image/")) throw new Error(t("err_only_image_supported"));
+      const img = await fileToImage(file);
+      const scale = 1 / factor;
+      const candidate = await encodeCandidate(img, scale, "image/webp", 0.995, `x${factor.toFixed(2)}`);
+      return {
+        bytes: candidate.bytes,
+        mimeType: candidate.mimeType,
+        mode: `${t("comp_using_compressed")} x${factor.toFixed(2)}`,
+        isOriginal: false,
+        width: candidate.width,
+        height: candidate.height,
+      };
+    }
+
+    async function compressWithTargetSui(file, targetMist) {
+      if (!targetMist || targetMist <= 0n) throw new Error(t("err_compress_target_invalid"));
+      const rawBytes = new Uint8Array(await file.arrayBuffer());
+      const rawMime = file.type || "image/png";
+      if (!rawMime.startsWith("image/")) throw new Error(t("err_only_image_supported"));
+      const img = await fileToImage(file);
+      const description = $("description-input").value.trim() || file.name || "image";
+      const usePassword = $("password-toggle").checked;
+
+      const rawDataBytes = rawBytes.length + (usePassword ? 16 : 0);
+      const rawChunkCount = Math.max(1, Math.ceil(rawDataBytes / CONFIG.CHUNK_SIZE_BYTES));
+      const rawEst = estimateTotalGasMist(rawDataBytes, rawChunkCount, description, rawMime, usePassword);
+      if (rawEst <= targetMist) {
+        return {
+          bytes: rawBytes,
+          mimeType: rawMime,
+          mode: t("comp_using_original"),
+          isOriginal: true,
+          width: img.naturalWidth,
+          height: img.naturalHeight,
+        };
+      }
+
+      const factors = [1.05, 1.1, 1.2, 1.35, 1.5, 1.75, 2, 2.5, 3, 3.5, 4, 5, 6, 8];
+      const qualities = [1.0, 0.995, 0.99, 0.985, 0.98, 0.97, 0.95, 0.93, 0.9];
+      let best = null;
+
+      for (const factor of factors) {
+        const scale = 1 / factor;
+        for (const q of qualities) {
+          const candidate = await encodeCandidate(img, scale, "image/webp", q, `x${factor.toFixed(2)}-q${q}`);
+          if (!best || candidate.bytes.length < best.bytes.length) {
+            best = { bytes: candidate.bytes, mimeType: candidate.mimeType, factor, quality: q, width: candidate.width, height: candidate.height };
+          }
+
+          const dataBytes = candidate.bytes.length + (usePassword ? 16 : 0);
+          const chunkCount = Math.max(1, Math.ceil(dataBytes / CONFIG.CHUNK_SIZE_BYTES));
+          const estimateMist = estimateTotalGasMist(dataBytes, chunkCount, description, candidate.mimeType, usePassword);
+          if (estimateMist <= targetMist) {
+            return {
+              bytes: candidate.bytes,
+              mimeType: candidate.mimeType,
+              mode: `${t("comp_using_compressed")} x${factor.toFixed(2)} q${q}`,
+              isOriginal: false,
+              width: candidate.width,
+              height: candidate.height,
+            };
+          }
+        }
+      }
+
+      if (!best) throw new Error(t("err_image_encode_failed"));
+      return {
         bytes: best.bytes,
-        compressionMode: best.label,
+        mimeType: best.mimeType,
+        mode: `${t("comp_using_compressed")} x${best.factor.toFixed(2)} q${best.quality}`,
+        isOriginal: false,
+        width: best.width,
+        height: best.height,
       };
     }
 
@@ -848,6 +1269,32 @@
       return chunks;
     }
 
+    async function buildDraftEstimate() {
+      const file = $("file-input").files?.[0];
+      if (!file) throw new Error(t("err_choose_image"));
+      const description = $("description-input").value.trim() || file.name || "image";
+      const usePassword = $("password-toggle").checked;
+
+      const asset = await getSourceUploadAsset(file);
+      const payloadBytes = asset.bytes.length + (usePassword ? 16 : 0);
+      if (payloadBytes > CONFIG.MAX_IMAGE_BYTES) {
+        throw new Error(t("err_processed_too_large", { size: payloadBytes, max: CONFIG.MAX_IMAGE_BYTES }));
+      }
+
+      const chunkCount = Math.max(1, Math.ceil(payloadBytes / CONFIG.CHUNK_SIZE_BYTES));
+      const estimatedMist = estimateTotalGasMist(payloadBytes, chunkCount, description, asset.mimeType, usePassword);
+      return {
+        description,
+        mimeType: asset.mimeType,
+        originalBytes: asset.originalBytes,
+        uploadBytes: payloadBytes,
+        chunkCount,
+        isEncrypted: usePassword,
+        compressionMode: asset.compressionMode,
+        estimatedMist,
+      };
+    }
+
     async function prepareUploadFromUI() {
       const file = $("file-input").files?.[0];
       if (!file) throw new Error(t("err_choose_image"));
@@ -856,8 +1303,8 @@
       const usePassword = $("password-toggle").checked;
       const password = $("password-input").value;
 
-      const compressed = await compressNearLossless(file);
-      let payloadBytes = compressed.bytes;
+      const asset = await getSourceUploadAsset(file);
+      let payloadBytes = asset.bytes;
       let isEncrypted = false;
       let kdfSalt = [];
       let kdfRounds = 0;
@@ -879,60 +1326,118 @@
 
       const chunks = chunkBytes(payloadBytes, CONFIG.CHUNK_SIZE_BYTES);
       return {
-        key: `${file.name}:${file.size}:${file.lastModified}:${description}:${usePassword ? "enc" : "plain"}`,
+        key: `${fileKey(file)}:${description}:${usePassword ? "enc" : "plain"}:${asset.compressionMode}`,
         description,
-        mimeType: compressed.mimeType,
+        mimeType: asset.mimeType,
         bytes: payloadBytes,
         chunks,
         isEncrypted,
         kdfSalt,
         kdfRounds,
         nonce,
-        originalBytes: compressed.originalBytes,
+        originalBytes: asset.originalBytes,
         uploadBytes: payloadBytes.length,
-        compressionMode: compressed.compressionMode,
+        compressionMode: asset.compressionMode,
       };
     }
 
     function updatePreparedInfo(prepared) {
+      const chunkCount = prepared.chunkCount || prepared.chunks?.length || 1;
       const saved = prepared.originalBytes - prepared.uploadBytes;
       const ratio = prepared.originalBytes > 0 ? ((saved / prepared.originalBytes) * 100).toFixed(1) : "0.0";
-      const enc = prepared.isEncrypted ? `Encrypted (AES-256-GCM / PBKDF2-${prepared.kdfRounds})` : t("meta_public_hint");
+      const enc = prepared.isEncrypted ? `Encrypted (AES-256-GCM / PBKDF2-${CONFIG.KDF_ROUNDS})` : t("meta_public_hint");
+      const estimatedMist = prepared.estimatedMist ?? estimateTotalGasMist(
+        prepared.uploadBytes,
+        chunkCount,
+        prepared.description,
+        prepared.mimeType,
+        prepared.isEncrypted
+      );
       setComp(t("comp_info", {
-        orig: prepared.originalBytes,
-        upload: prepared.uploadBytes,
+        orig: fmtBytes(prepared.originalBytes),
+        upload: fmtBytes(prepared.uploadBytes),
         ratio,
         mode: prepared.compressionMode,
-        chunks: prepared.chunks.length,
+        chunks: chunkCount,
         enc,
       }));
-      if (prepared.chunks.length === 1) {
-        setGas(`GAS 預算: direct=${fmtSui(CONFIG.GAS_BUDGET_DIRECT_MIST)} SUI；預計 1 筆交易（單筆直傳）`);
-      } else {
-        setGas(t("gas_budget_info", {
-          start: fmtSui(CONFIG.GAS_BUDGET_START_MIST),
-          append: fmtSui(CONFIG.GAS_BUDGET_APPEND_MIST),
-          chunkPerTx: CONFIG.CHUNKS_PER_TX,
-          finalize: fmtSui(CONFIG.GAS_BUDGET_FINALIZE_MIST),
-          txCount: prepared.chunks.length + 2,
-        }));
-      }
+      const mode = chunkCount === 1 ? t("upload_mode_direct") : t("upload_mode_chunked");
+      setGas(t("gas_estimate_info", { sui: fmtSui(estimatedMist), mist: estimatedMist.toString(), mode, chunks: chunkCount }));
     }
 
     async function refreshPreparePreview() {
       const file = $("file-input").files?.[0];
       state.preparedUpload = null;
-      if (!file) { setComp(t("comp_idle")); setGas(t("gas_idle")); return; }
-      if (!isConnected()) { setComp(t("comp_need_wallet")); return; }
+      if (!file) { setComp(t("comp_idle")); setGas(t("gas_idle")); clearManualCompression(); return; }
 
       try {
+        syncCompressionLinkedFields();
         setComp(t("comp_calculating"));
-        const prepared = await prepareUploadFromUI();
-        state.preparedUpload = prepared;
-        updatePreparedInfo(prepared);
+        const draft = await buildDraftEstimate();
+        updatePreparedInfo(draft);
       } catch (err) {
         setComp(t("comp_failed", { error: err.message }));
         setGas(t("gas_unavailable", { error: err.message }));
+      }
+    }
+
+    async function applyManualCompression() {
+      const file = $("file-input").files?.[0];
+      if (!file) { logKey("err_choose_image"); return; }
+
+      const btn = $("btn-compress");
+      btn.disabled = true;
+      btn.textContent = t("btn_compressing");
+      try {
+        const mode = state.compressionControl;
+        let result = null;
+        const hasTarget = !!String($("compress-target-sui").value || "").trim();
+        if (mode === "target" && hasTarget) {
+          const targetMist = parseSuiToMist($("compress-target-sui").value);
+          if (!targetMist || targetMist <= 0n) throw new Error(t("err_compress_target_invalid"));
+          result = await compressWithTargetSui(file, targetMist);
+        } else {
+          const factor = Number($("compress-factor").value);
+          if (!(factor >= 1.05)) throw new Error(t("err_compress_factor_invalid"));
+          result = await compressWithFactor(file, factor);
+        }
+
+        if (result.isOriginal) {
+          clearManualCompression();
+          setCompressionResultMeta(t("compress_result_info", {
+            width: result.width || "-",
+            height: result.height || "-",
+            size: fmtBytes(result.bytes?.length || file.size),
+          }));
+          logKey("log_compression_keep_original", { name: short(file.name) });
+        } else {
+          if (result.bytes.length > CONFIG.MAX_IMAGE_BYTES) {
+            throw new Error(t("err_compress_too_large", { size: result.bytes.length, max: CONFIG.MAX_IMAGE_BYTES }));
+          }
+          state.manualCompression = {
+            sourceKey: fileKey(file),
+            bytes: result.bytes,
+            mimeType: result.mimeType,
+            mode: result.mode,
+            width: result.width || 0,
+            height: result.height || 0,
+          };
+          setCompressedPreview(result.bytes, result.mimeType, result.mode);
+          setCompressionResultMeta(t("compress_result_info", {
+            width: result.width || "-",
+            height: result.height || "-",
+            size: fmtBytes(result.bytes.length),
+          }));
+          $("btn-cancel-compress").classList.remove("hidden");
+          logKey("log_compression_applied", { mode: result.mode, from: file.size, to: result.bytes.length });
+        }
+
+        await refreshPreparePreview();
+      } catch (err) {
+        log(`壓縮失敗: ${err.message}`);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = t("btn_compress");
       }
     }
 
@@ -992,7 +1497,6 @@
           }
         }
 
-        const walletReportedChain = state.chain;
         state.chain = CONFIG.TARGET_CHAIN;
         state.client = new SuiClient({ url: getFullnodeUrl(CONFIG.TARGET_NETWORK) });
 
@@ -1007,8 +1511,11 @@
         await assertGasBalance();
         if (type === "okx") await switchToSuiMainnet();
         log(`錢包已連線 ${short(state.address)}，環境檢查通過`);
-        setGas(t("gas_idle"));
-        setComp(t("comp_idle"));
+        if ($("file-input").files?.[0]) await refreshPreparePreview();
+        else {
+          setGas(t("gas_idle"));
+          setComp(t("comp_idle"));
+        }
         setProg(t("progress_idle"));
         await loadGallery();
       } catch (err) {
@@ -1181,7 +1688,7 @@
         if (state.walletType === "okx") await switchToSuiMainnet();
         await assertPackageOnCurrentNetwork();
         await assertGasBalance();
-        setProg("上傳進度: 準備壓縮/加密資料...");
+        setProg("上傳進度: 準備上傳資料...");
 
         const prepared = await prepareUploadFromUI();
         state.preparedUpload = prepared;
@@ -1227,6 +1734,7 @@
 
         $("file-input").value = "";
         $("password-input").value = "";
+        clearManualCompression();
         state.preparedUpload = null;
         setComp(t("comp_idle"));
         await loadGallery();
@@ -1245,7 +1753,10 @@
     async function deleteImage(objectId) {
       const txb = new TransactionBlock();
       txb.moveCall({ target: target("delete_image"), arguments: [txb.object(objectId)] });
-      await executeTx(txb, `刪除圖片 ${short(objectId)}`, false, CONFIG.GAS_BUDGET_DELETE_MIST);
+      const result = await executeTx(txb, `刪除圖片 ${short(objectId)}`, false, CONFIG.GAS_BUDGET_DELETE_MIST);
+      const gasUsed = result?.effects?.gasUsed || {};
+      const rebateMist = toBigInt(gasUsed.storageRebate);
+      log(`刪除返還 SUI: ${fmtSui(rebateMist)} (storage rebate, ${rebateMist.toString()} MIST)`);
     }
 
     async function applyPackageId() {
@@ -1279,6 +1790,8 @@
       const url = URL.createObjectURL(blob);
       const img = document.createElement("img");
       img.src = url;
+      img.style.cursor = "zoom-in";
+      img.addEventListener("click", () => openLightbox(url));
       previewEl.appendChild(img);
     }
 
@@ -1288,7 +1801,7 @@
       const desc = fields.description || t("card_no_description");
       const encrypted = !!fields.is_encrypted;
       const chunkCount = fields.chunk_count || "-";
-      const size = fields.size_bytes || b(fields.data).length;
+      const size = fmtBytes(fields.size_bytes || b(fields.data).length);
       const uploader = fields.uploader || "";
       card.innerHTML = `
         <div class="preview" data-role="preview">${t("card_loading")}</div>
@@ -1427,7 +1940,7 @@
           if (!objectId || !fields) continue;
           renderImageCard(el, objectId, fields, { allowDelete: true });
         }
-        log(`Loaded ${res.data.length} owned images`);
+        logKey("log_loaded_owned_images", { count: res.data.length });
       } catch (err) {
         el.innerHTML = `<p class="meta">${tl(`載入失敗: ${err.message}`)}</p>`;
       }
@@ -1464,7 +1977,32 @@
       $("btn-lookup").addEventListener("click", lookupById);
       $("btn-apply-package").addEventListener("click", applyPackageId);
       $("btn-disconnect").addEventListener("click", disconnectWallet);
-      $("file-input").addEventListener("change", refreshPreparePreview);
+      $("btn-compress").addEventListener("click", applyManualCompression);
+      $("compress-preview").addEventListener("click", () => {
+        if (!state.compressionPreviewUrl) return;
+        toggleLightbox(state.compressionPreviewUrl);
+      });
+      $("compress-lightbox").addEventListener("click", () => toggleLightbox(state.compressionPreviewUrl));
+      $("btn-cancel-compress").addEventListener("click", async () => {
+        clearManualCompression();
+        logKey("log_compression_canceled");
+        await refreshPreparePreview();
+      });
+      $("file-input").addEventListener("change", async () => {
+        clearManualCompression();
+        state.compressionControl = "factor";
+        await refreshPreparePreview();
+      });
+      $("compress-factor").addEventListener("input", async () => {
+        state.compressionControl = "factor";
+        syncTargetFromFactor();
+        await refreshPreparePreview();
+      });
+      $("compress-target-sui").addEventListener("input", async () => {
+        state.compressionControl = "target";
+        syncFactorFromTarget();
+        await refreshPreparePreview();
+      });
       $("description-input").addEventListener("input", refreshPreparePreview);
       $("password-toggle").addEventListener("change", () => {
         const enabled = $("password-toggle").checked;
@@ -1473,6 +2011,8 @@
         refreshPreparePreview();
       });
       $("password-input").addEventListener("input", refreshPreparePreview);
+      $("compress-factor").addEventListener("keydown", (e) => { if (e.key === "Enter") applyManualCompression(); });
+      $("compress-target-sui").addEventListener("keydown", (e) => { if (e.key === "Enter") applyManualCompression(); });
     }
 
     bindEvents();
