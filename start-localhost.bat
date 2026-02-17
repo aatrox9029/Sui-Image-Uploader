@@ -3,10 +3,12 @@ setlocal
 
 cd /d "%~dp0"
 set PORT=5500
-set URL=http://localhost:%PORT%/index.html
+set CACHE_BUSTER=%RANDOM%%RANDOM%%RANDOM%
+set URL=http://localhost:%PORT%/index.html?v=%CACHE_BUSTER%
 
 echo Starting local server in "%CD%"
 echo URL: %URL%
+echo Cache buster: %CACHE_BUSTER%
 echo Press Ctrl+C to stop the server.
 echo.
 
